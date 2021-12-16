@@ -17,7 +17,7 @@ app.config['CORS_HEADERS'] = 'Content-Type'
 
 class BaseUrl(Resource):
     def post(self):
-        url = request.form['data']
+        url = request.get_json()['data']
         r = requests.get(url)
         soup = BeautifulSoup(r.text, 'html.parser')
         full_name = soup.h1.text

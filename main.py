@@ -56,7 +56,7 @@ class BaseUrl(Resource):
             return_output = jsonify({'full_name': full_name, 
                           'catalog_num': catalog_num,
                           'big_image_url': big_image_url, 
-                          'json_str': json_str})
+                          'json_str': json_str[1:-1]})
         return return_output
 
 API_NAME.add_resource(BaseUrl, '/api/', methods=['POST', 'GET'])

@@ -20,6 +20,7 @@ class BaseUrl(Resource):
         url = request.get_json()['data']
         r = requests.get(url)
         soup = BeautifulSoup(r.text, 'html.parser')
+        print(soup)
         full_name = soup.h1.text
         big_image_url = soup.find_all(class_='pdp-gallery__big-image')[0].get('src')
         small_image_url_lst = []

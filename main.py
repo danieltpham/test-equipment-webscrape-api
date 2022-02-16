@@ -4,6 +4,7 @@ from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import recordlinkage
 import html5lib
 import json
 import re
@@ -15,12 +16,47 @@ API_NAME = Api(app)
 app.config['SECRET_KEY'] = '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 app.config['CORS_HEADERS'] = 'Content-Type'
 
-class BaseUrl(Resource):
+class DeDup(Resource):
+    def post(self):
+        """
+        Take a JSON string with 3 fields: 'crca9_eimstandardequipmenttypeid', 'crca9_equipmentmake', 'crca9_equipmentmodel' 
+        and output a JSON string with potential duplicated scores
+        """
+        
+        StdEq_JSON = request.get_json()['data']
+
+        df = pd.DataFrame(eval(StdEq_JSON)).set_index('crca9_eimstandardequipmenttypeid')
+
+        Full_Index_Table = recordlinkage.index.Full().index(df)
+
+        compare = recordlinkage.Compare()
+        compare.string('crca9_equipmentmodel','crca9_equipmentmodel', method='levenshtein', label = 'score')
+        #compare.string('crca9_equipmentmake','crca9_equipmentmake', method='levenshtein', label = 'crca9_equipmentmake')
+        comparison_vectors = compare.compute(Full_Index_Table, df)
+        comparison_vectors = comparison_vectors[comparison_vectors.sum(axis=1)>0.5]
+
+        output = []
+
+        for (idx1, idx2), scoredict in comparison_vectors.to_dict('index').items():
+            toappend = {
+                'idx1': idx1,
+                'item1': df.loc[idx1,'crca9_equipmentmodel'],
+                'idx2': idx2,
+                'item2': df.loc[idx2,'crca9_equipmentmodel'],
+                'score': scoredict['score']
+            }
+            output.append(toappend)
+
+        return_output = jsonify({'deduped': str(output).replace("'",'').replace('[','').replace(']','')})
+        return return_output
+        
+
+class ScrapeThermo(Resource):
     def post(self):
         url = request.get_json()['data']
         r = requests.get(url)
         soup = BeautifulSoup(r.text, 'html.parser')
-        print(soup)
+        #print(soup)
         full_name = soup.h1.text
         big_image_url = soup.find_all(class_='pdp-gallery__big-image')[0].get('src')
         small_image_url_lst = []
@@ -56,10 +92,11 @@ class BaseUrl(Resource):
             return_output = jsonify({'full_name': full_name, 
                           'catalog_num': catalog_num,
                           'big_image_url': big_image_url, 
-                          'json_str': json_str[1:-1]})
+                          'json_str': json_str})
         return return_output
 
-API_NAME.add_resource(BaseUrl, '/api/', methods=['POST', 'GET'])
+API_NAME.add_resource(ScrapeThermo, '/scrapethermo', methods=['POST', 'GET'])
+API_NAME.add_resource(ScrapeThermo, '/dedup', methods=['POST', 'GET'])
 
 if __name__ == '__main__':
     app.run()#host='localhost', port=9000, debug=True, threaded=True)

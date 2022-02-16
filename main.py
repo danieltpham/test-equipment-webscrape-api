@@ -43,11 +43,11 @@ class DeDup(Resource):
                 'item1': df.loc[idx1,'crca9_equipmentmodel'],
                 'idx2': idx2,
                 'item2': df.loc[idx2,'crca9_equipmentmodel'],
-                'score': scoredict['score']
+                'score': str(scoredict['score'])
             }
             output.append(toappend)
 
-        return_output = jsonify({'deduped': str(output).replace("'",'').replace('[','').replace(']','')})
+        return_output = jsonify({'deduped': output})
         return return_output
         
 

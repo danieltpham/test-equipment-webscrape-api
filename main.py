@@ -96,7 +96,7 @@ class ScrapeThermo(Resource):
         return return_output
 
 API_NAME.add_resource(ScrapeThermo, '/scrapethermo', methods=['POST', 'GET'])
-API_NAME.add_resource(ScrapeThermo, '/dedup', methods=['POST', 'GET'])
+API_NAME.add_resource(DeDup, '/dedup', methods=['POST', 'GET'])
 
 if __name__ == '__main__':
-    app.run()#host='localhost', port=9000, debug=True, threaded=True)
+    app.run(host='localhost', port=9000, debug=True, threaded=True)

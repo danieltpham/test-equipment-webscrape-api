@@ -8,6 +8,8 @@ import recordlinkage
 import html5lib
 import json
 import re
+from fuzzywuzzy.fuzz import WRatio
+from recordlinkage.base import BaseCompareFeature
 
 
 app = Flask(__name__)
@@ -15,6 +17,52 @@ CORS(app)
 API_NAME = Api(app)
 app.config['SECRET_KEY'] = '192b9bdd22ab9ed4d12e236c78afcb9a393ec15f71bbf5dc987d54727823bcbf'
 app.config['CORS_HEADERS'] = 'Content-Type'
+
+#### Custom function for deduplication ####
+class CompareFuzzWRatio(BaseCompareFeature):
+
+    def _compute_vectorized(self, s1, s2):
+        """
+        fuzzywuzzy.fuzz.WRatio for 2 vectors (strip non-alphanumeric before compare)
+        """
+        def custom_wratio(x, y):
+            # Strip non-alphanumeric before comparisons
+            x = "".join(re.findall("[a-zA-Z0-9]+", x))
+            y = "".join(re.findall("[a-zA-Z0-9]+", y))
+            return WRatio(x,y)
+        
+        sim = pd.concat([s1, s2], axis=1).apply(lambda x: custom_wratio(x[0], x[1])/100, axis=1)
+
+        return sim
+    
+#### App Routing ####
+
+class FuzzyMatch(Resource):
+    def post(self):
+        """
+        Take a JSON with 3 fields: 'search_phrase', 'threshold', and 'JSON_str' which is the dataframe
+        and output a JSON string with top fuzzy matches
+        """
+        
+        JSON_body = request.get_json()['data']
+        search_phrase = JSON_body['search_phrase']
+        JSON_str = JSON_body['JSON_str']
+        threshold = JSON_body['threshold']
+
+        df = pd.DataFrame(eval(JSON_str.replace('null', """ " " """))).set_index('crca9_uniqueid')
+
+        def preprocessing(txt):
+            return "".join(re.findall("[a-zA-Z0-9]+", txt)).lower()
+        score = 1/100 * (0.6*df['crca9_cslname'].apply(lambda x: WRatio(preprocessing(x), preprocessing(search_phrase))) + \
+                         0.4*df['crca9_standardequipmenttype']\
+                         .apply(lambda x: WRatio(preprocessing(x), preprocessing(search_phrase)))).sort_values(ascending=False)
+        if score[score >= threshold].shape[0] >= 5:
+            df = df.loc[score[score >= threshold].index,:].reset_index()
+        else:
+            df = df.loc[score.index,:].head().reset_index()
+
+        return_output = jsonify({'fuzzymatched': df.to_dict('records')})
+        return return_output
 
 class DeDup(Resource):
     def post(self):
@@ -30,10 +78,11 @@ class DeDup(Resource):
         Full_Index_Table = recordlinkage.index.Full().index(df)
 
         compare = recordlinkage.Compare()
-        compare.string('crca9_equipmentmodel','crca9_equipmentmodel', method='levenshtein', label = 'score')
+        #compare.string('crca9_equipmentmodel','crca9_equipmentmodel', method='levenshtein', label = 'score')
+        compare.add(CompareFuzzWRatio('crca9_equipmentmodel','crca9_equipmentmodel', label='score'))
         #compare.string('crca9_equipmentmake','crca9_equipmentmake', method='levenshtein', label = 'crca9_equipmentmake')
         comparison_vectors = compare.compute(Full_Index_Table, df)
-        comparison_vectors = comparison_vectors[comparison_vectors.sum(axis=1)>0.5]
+        comparison_vectors = comparison_vectors[comparison_vectors.sum(axis=1)>0.6]
 
         output = []
 
@@ -53,6 +102,10 @@ class DeDup(Resource):
 
 class ScrapeThermo(Resource):
     def post(self):
+        """
+        Take a JSON string with 1 field: 'data' that contains the URL of the thermofisher website to scrape
+        and output a JSON string with 4 fields: 'full_name', 'catalog_num', 'big_image_url', and the scraped 'json_str'
+        """
         url = request.get_json()['data']
         r = requests.get(url)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -96,6 +149,7 @@ class ScrapeThermo(Resource):
         return return_output
 
 API_NAME.add_resource(ScrapeThermo, '/scrapethermo', methods=['POST', 'GET'])
+API_NAME.add_resource(FuzzyMatch, '/fuzzymatch', methods=['POST', 'GET'])
 API_NAME.add_resource(DeDup, '/dedup', methods=['POST', 'GET'])
 
 if __name__ == '__main__':

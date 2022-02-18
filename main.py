@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import recordlinkage
 import html5lib
-import json
 import re
 from fuzzywuzzy.fuzz import WRatio
 from recordlinkage.base import BaseCompareFeature
